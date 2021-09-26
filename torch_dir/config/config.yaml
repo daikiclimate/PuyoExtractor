@@ -1,0 +1,12 @@
+device: "cuda:2"
+# model: "mobv2"
+model: "mobv3_large" 
+save_folder : "./weight/"
+lr : 0.01
+epochs : 20
+batch_size : 512
+# type : "img"
+
+wandb: False
+
+repeat: 5
