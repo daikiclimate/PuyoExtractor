@@ -20,7 +20,6 @@ from models import build_model
 # from sklearn.metrics import accuracy_score
 
 
-
 SEED = 14
 torch.manual_seed(SEED)
 
@@ -39,10 +38,10 @@ def sweep(path):
     wandb.agent(sweep_id, main)
 
 
-def main(sweep=False, fold_num=0):
+def main(sweep=False):
     config = get_arg()
 
-    config.save_folder = os.path.join(config.save_folder, config.model)
+    # config.save_folder = os.path.join(config.save_folder, config.model)
     if not os.path.exists(config.save_folder):
         os.makedirs(config.save_folder)
 
@@ -55,14 +54,15 @@ def main(sweep=False, fold_num=0):
     # torch.set_default_tensor_type("torch.cuda.FloatTensor")
     print("device:", device)
     # train_set, test_set = return_data.return_dataset(config)
-    train_set = return_data.return_dataloader(config)
-    # train_set, test_set = return_data.return_dataloader(config, fold_num=fold_num)
+    train_set, test_set = return_data.return_dataloader(config)
+
     model = build_model.build_model(config)
     model = model.to(device)
+
     optimizer = optim.Adam(model.parameters(), lr=config.lr)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9)
-    weight = torch.ones(100).to(config.device)
-    criterion = build_loss_func(config, weight)
+
+    criterion = build_loss_func(config)
 
     best_eval = 0
     pbar = tqdm.tqdm(total=config.epochs)
@@ -78,8 +78,6 @@ def main(sweep=False, fold_num=0):
             config=config,
             device=device,
         )
-        exit()
-        scheduler.step()
         print(f"\nlr: {scheduler.get_last_lr()}")
         t1 = time.time()
         print(f"\ntraining time :{round(t1 - t0)} sec")
@@ -91,18 +89,19 @@ def main(sweep=False, fold_num=0):
             device=device,
             best_eval=best_eval,
         )
-        if config.wandb:
-            wandb.log(
-                {
-                    "epoch": epoch,
-                    "loss": train_loss,
-                    "acc": best_eval,
-                    "lr": scheduler.get_last_lr(),
-                }
-            )
+        # if config.wandb:
+        #     wandb.log(
+        #         {
+        #             "epoch": epoch,
+        #             "loss": train_loss,
+        #             "acc": best_eval,
+        #             "lr": scheduler.get_last_lr(),
+        #         }
+        #     )
+        scheduler.step()
         pbar.update(1)
 
-    torch.save(model.state_dict(), f"{config.save_folder}/model_{str(fold_num)}.pth")
+    torch.save(model.state_dict(), f"{config.save_folder}/model.pth")
 
 
 def train(
@@ -119,17 +118,27 @@ def train(
     total_batch = len(dataset) * config.repeat
     t0 = time.time()
     for _ in range(config.repeat):
-        for data1, data2 in dataset:
+        for base, data1, data2 in dataset:
             t1 = time.time()
             load_time = t1 - t0
-            data1 = data1.to(device)
-            data2 = data2.to(device)
+            #data1 = data1.to(device)
+            #data2 = data2.to(device)
 
-            data1_out = model(data1)
-            data2_out = model(data2)
-            bs = data1_out.shape
-            diff = torch.ones(bs).float().to(device)
-            loss = criterion(data1_out - data2_out, diff)
+            d = torch.cat([base, data1, data2])
+            d = d.to(device)
+            out = model(d)
+            base = out[:config.batch_size]
+            data1_out = out[config.batch_size:config.batch_size*2]
+            data2_out = out[config.batch_size*2:]
+
+            # data1_out = model(data1)
+            # data2_out = model(data2)
+            #bs = data1_out.shape
+            #diff = torch.ones(bs).float().to(device)
+            #pred_diff = data1_out - data2_out
+            # loss = criterion(pred_diff, diff)
+            # loss = criterion(data1_out, data2_out, base)
+            loss = criterion(base, data1_out, data2_out)
 
             optimizer.zero_grad()
             loss.backward()
@@ -142,7 +151,9 @@ def train(
                 end="",
             )
             t0 = time.time()
-    exit()
+
+    #for i in range(10):
+    #    print(data1_out[i], data2_out[i])
     print("")
     print(f"\rtotal_loss: [{total_loss / counter}]", end="")
     return total_loss / counter
@@ -151,23 +162,27 @@ def train(
 def test(model, dataset, config, device, best_eval=0, th=0.6):
     model.eval()
     labels = []
-    preds = []
-    # eval = evaluator()
-    for data, label in dataset:
-        # for i in range(len(dataset)):
-        #     batch_dataset, batch_label = dataset[i]
-        #     for data, label in zip(batch_dataset, batch_label):
-        data = data.to(device)
+    for _, data1, data2 in dataset:
+
+        data2 = data2[0].to(device)
         with torch.no_grad():
-            output = model(data)
+            output = model(data2)
+        max_index = torch.argmax(output)
+        best_field_onehot = data2[max_index]
+        best_field = torch.argmax(best_field_onehot, 0)
 
-        output = torch.argmax(output, axis=1)
+        player1 = data1.detach().cpu().reshape(-1)
+        player2 = best_field.detach().cpu().reshape(-1)
+        tf = player1 == player2
+        tf = torch.all(tf)
+        labels.append(tf)
+        if len(labels) == 1000:
+            break
 
-        labels.extend(label.detach().cpu().numpy())
-        preds.extend(output.detach().cpu().numpy())
+    score = np.sum(labels) / len(labels)
 
-    labels, preds = np.array(labels), np.array(preds)
-    score = accuracy_score(labels, preds)
+    # labels, preds = np.array(labels), np.array(preds)
+    # score = accuracy_score(labels, preds)
 
     # with open("test.pkl", "wb") as f:
     # pickle.dump(preds, f)
@@ -192,6 +207,5 @@ def test(model, dataset, config, device, best_eval=0, th=0.6):
 
 if __name__ == "__main__":
     path = "config/config_tcn_sweep.yaml"
-    for i in range(5):
-        main(fold_num=i)
+    main()
     # sweep(path)

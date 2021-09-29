@@ -6,35 +6,9 @@ import torchvision.models as models
 
 
 def build_model(config, num_class=1):
-    model = BaseModel()
-    # model_name = config.model
-    # if model_name == "mobv2":
-    #     model = models.mobilenet_v2(pretrained=False)
-    #     in_feature = 1280
-    #     model.classifier = nn.Linear(in_feature, num_class)
-    # elif model_name == "mobv3_small":
-    #     model = models.mobilenet_v3_small(pretrained=False)
-    #     in_feature = 576
-    #     model.classifier = nn.Linear(in_feature, num_class)
-    # elif model_name == "mobv3_large":
-    #     model = models.mobilenet_v3_large(pretrained=False)
-    #     in_feature = 960
-    #     model.classifier = nn.Linear(in_feature, num_class)
-    # elif model_name == "vgg19_bn":
-    #     model = models.vgg19_bn(pretrained=False)
-    #     model.classifier = nn.Sequential(
-    #         nn.Linear(in_features=25088, out_features=num_class, bias=True),
-    #     )
-    # elif model_name == "vgg11_bn":
-    #     model = models.vgg11_bn(pretrained=False)
-    #     model.classifier = nn.Sequential(
-    #         nn.Linear(in_features=25088, out_features=num_class, bias=True),
-    #         # nn.ReLU(inplace=True),
-    #         # nn.Linear(in_features=4096, out_features=num_class, bias=True)
-    #     )
-    # elif model_name == "efficientnet":
-    #     model_type = model_name + config.model_type
-    #     model = EfficientNet.from_name(model_type, num_classes=num_class)
+    # model = BaseModel()
+    model = BaseModel2()
+    # model = LinerModel()
 
     return model
 
@@ -61,6 +35,70 @@ class BaseModel(nn.Module):
         return x
 
 
+class BaseModel2(nn.Module):
+    def __init__(self):
+        super().__init__()
+        h = 32
+        self._conv = Conv(7, h, 3, 1, 1)
+        self._res_block1 = nn.ModuleList([ResidualCSPBlock(h, h) for _ in range(2)])
+        self._res_block1 = ResidualCSPBlock(h, h)
+        # self._res_block1 = nn.Sequential([ResidualCSPBlock(h, h) for _ in range(2)])
+        h2 = h * 2
+        self._down_conv = Conv(h, h2, 3, 2, 1)
+        self._res_block2 = nn.ModuleList([ResidualCSPBlock(h2, h2) for _ in range(2)])
+        self._res_block2 = ResidualCSPBlock(h2, h2)
+        # self._res_block2 = nn.Sequential([ResidualCSPBlock(h2, h2) for _ in range(2)])
+        self._fc = nn.Sequential(nn.Linear(h2 * 18, 100), nn.ReLU(), nn.Linear(100, 1))
+
+    def forward(self, x):
+        bs, _, _, _ = x.shape
+        x = self._conv(x)
+        x = self._res_block1(x)
+        x = self._down_conv(x)
+        x = self._res_block2(x)
+        x = x.view(bs, -1)
+        x = self._fc(x)
+
+        return x
+
+
+class ResidualCSPBlock(nn.Module):
+    def __init__(self, input_channel, output_channl):
+        super().__init__()
+        self._init_conv = nn.Conv2d(input_channel, input_channel // 2, 1, 1, 0)
+        self._ext = nn.Sequential(
+            Conv(input_channel // 2, input_channel // 2),
+            Conv(input_channel // 2, input_channel // 2),
+        )
+
+    def forward(self, x):
+        x = self._init_conv(x)
+        x1 = self._ext(x)
+        x = torch.cat([x1, x], 1)
+        return x
+        # return x1 + x
+
+
+class LinerModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._fc = nn.Sequential(
+            nn.Linear(6 * 12, 100),
+            # nn.Linear(7 * 6 * 12, 100),
+            nn.BatchNorm1d(100),
+            nn.ReLU(),
+        )
+        self._linear = nn.Linear(100, 1)
+
+    def forward(self, x):
+        x = torch.argmax(x, 1).float()
+        bs = x.shape[0]
+        x = x.view(bs, -1)
+        x = self._fc(x)
+        x = self._linear(x)
+        return x
+
+
 class Conv(nn.Module):
     def __init__(self, input_channel, output_channel, kernel=3, stride=1, padding=1):
         super().__init__()
@@ -71,10 +109,11 @@ class Conv(nn.Module):
         self._activ = nn.ReLU(inplace=True)
 
     def forward(self, x):
+        # return self._activ(self._conv(x))
         return self._activ(self._batchnorm(self._conv(x)))
 
 
 if __name__ == "__main__":
     t = torch.rand(1, 7, 12, 6)
-    model = BaseModel()
+    model = BaseModel2()
     print(model(t).shape)

@@ -1,12 +1,10 @@
 device: "cuda:2"
-# model: "mobv2"
-model: "mobv3_large" 
+model: "base" 
 save_folder : "./weight/"
-lr : 0.01
+lr : 0.001
 epochs : 20
 batch_size : 512
-# type : "img"
 
 wandb: False
 
-repeat: 5
+repeat: 1

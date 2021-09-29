@@ -1,19 +1,22 @@
 import torch
 from torch.utils.data import DataLoader
 
-# from .feat_dataset import ImgDataset
-from .feat_dataset import PuyoDataset
-# from .transform import return_img_transform, return_test_img_transform
+from .puyo_dataset import PuyoDataset
+from .transform import return_transform
 
 
 def return_dataset(config):
     # dataset_type = config.type
-    return PuyoDataset()
+    num_test = 2000
+    transform = return_transform()
+    return PuyoDataset(num_test=num_test, transform=transform), PuyoDataset(
+        mode="test", num_test=num_test
+    )
 
 
 def return_dataloader(config):
     # train_set, valid_set = return_dataset(config, fold_num)
-    train_set = PuyoDataset()
+    train_set, valid_set = return_dataset(config)
     train_loader = DataLoader(
         train_set,
         batch_size=config.batch_size,
@@ -23,14 +26,13 @@ def return_dataloader(config):
         # num_workers=8,
         pin_memory=False,
     )
-    return train_loader
-    # valid_loader = torch.utils.data.DataLoader(
-    #     valid_set,
-    #     batch_size=1,
-    #     drop_last=False,
-    #     num_workers=0,
-    # )
-    # return train_loader, valid_loader
+    valid_loader = torch.utils.data.DataLoader(
+        valid_set,
+        batch_size=1,
+        drop_last=False,
+        num_workers=0,
+    )
+    return train_loader, valid_loader
 
 
 def return_testloader():

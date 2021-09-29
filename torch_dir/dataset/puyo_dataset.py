@@ -7,30 +7,53 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.utils.data as data
+import tqdm
 
 
 class PuyoDataset(data.Dataset):
     def __init__(
         self,
         mode="train",
-        data_dir="./puyo_dataset",
+        data_dir="/home/ubuntu/local/puyo_dataset",
         transform=None,
+        num_test=2000,
     ):
         self._data_dir = data_dir
         self._puyo_list = os.listdir(data_dir)
-        # self._transform = transform
+        file_name = "./dataset/valid_files.pkl"
+        if False:
+            # if True:
+            gt_labels, files = check_file_list(self._puyo_list)
+            print(len(gt_labels))
+            with open(file_name, "wb") as f:
+                pickle.dump([gt_labels, files], f)
+        else:
+            with open(file_name, "rb") as f:
+                t = pickle.load(f)
+                gt_labels, files = t
+            self._puyo_list = files
+
+        self._mode = mode
+        self._transform = transform
         # self._mode = mode
+        if self._mode == "train":
+            self._puyo_list = self._puyo_list[:-num_test]
+        else:
+            self._puyo_list = self._puyo_list[-num_test:]
 
     def __getitem__(self, idx):
         path = os.path.join(self._data_dir, self._puyo_list[idx])
-        cur_field, exsample_field = puyo(path)
-        return cur_field, exsample_field
+        if self._mode == "test":
+            pre_field, cur_field, exsample_field = get_all_puyo(path)
+        else:
+            pre_field, cur_field, exsample_field = puyo(path, self._transform)
+        return pre_field, cur_field, exsample_field
 
     def __len__(self):
         return len(self._puyo_list)
 
 
-def puyo(file_name="S103_10_p1_1.pkl"):
+def puyo(file_name="S103_10_p1_1.pkl", transform=None):
 
     with open(file_name, "rb") as f:
         t = pickle.load(f)
@@ -44,13 +67,15 @@ def puyo(file_name="S103_10_p1_1.pkl"):
         max_time += 1
         if max_time == 10:
             break
-    # print(pre_field)
-    # print(exsample_field)
-    # print(cur_field)
-    # print(exsample_field-cur_field)
+
+    pre_field, cur_field, exsample_field = transform(
+        [pre_field, cur_field, exsample_field]
+    )
+
     exsample_field = to_onehot(exsample_field).float()
     cur_field = to_onehot(cur_field).float()
-    return cur_field, exsample_field
+    pre_field = to_onehot(pre_field).float()
+    return pre_field, cur_field, exsample_field
 
 
 def to_onehot(t):
@@ -61,17 +86,36 @@ def to_onehot(t):
     return t
 
 
-def put_next_puyo(field, puyo):
-    flip_puyo = random.randint(0, 1)
-    if flip_puyo:
+def get_all_puyo(file_name):
+    with open(file_name, "rb") as f:
+        t = pickle.load(f)
+    pre_field, cur_field, next_puyo = t
+
+    all_field = []
+    for i in range(11):
+        for j in range(2):
+            f = put_next_puyo(pre_field, next_puyo[0], i, j)
+            f = to_onehot(f).float()
+            f = f.unsqueeze(0)
+            all_field.append(f)
+    all_field = torch.cat(all_field)
+    return pre_field, cur_field, all_field
+
+
+def put_next_puyo(field, puyo, put_place=None, flip_puyo=None):
+    if flip_puyo == None:
+        flip_puyo = random.randint(0, 1)
+    if flip_puyo == 1:
         puyo[0], puyo[1] = puyo[1], puyo[0]
 
     tmp_field = field.copy()
 
     # put_place = random.randint(0, 5)
     # put_place = random.randint(6, 10)
-    put_place = random.randint(0, 10)
     # put_place = 5 + 3
+    if put_place == None:
+        put_place = random.randint(0, 10)
+
     blank_field = np.full((2, 6), 6, dtype=np.uint8)
     tmp_field = np.concatenate([blank_field, tmp_field])
     if put_place < 6:
@@ -135,11 +179,37 @@ def get_list(path="puyo_dataset"):
         a = puyo(os.path.join(path, files[i]))
 
 
+def check_file_list(files, data_dir="/home/ubuntu/local/puyo_dataset"):
+    gt_label = []
+    valid_files = []
+    for f in tqdm.tqdm(files):
+        path = os.path.join(data_dir, f)
+        pre_field, cur_field, exsample_field = get_all_puyo(path)
+        gt_index = check_gt_index(cur_field, exsample_field)
+        if gt_index == -1:
+            continue
+        else:
+            gt_label.append(gt_index)
+            valid_files.append(f)
+    print(len(valid_files), len(files))
+    return gt_label, valid_files
+
+
+def check_gt_index(d1, d2):
+    d1 = d1.reshape(-1)
+    d1 = torch.tensor(d1)
+    d2 = torch.argmax(d2, 1)
+    for i, d in enumerate(d2):
+        if torch.all(d.reshape(-1) == d1):
+            return i
+    return -1
+
+
 if __name__ == "__main__":
     a = PuyoDataset()
     for i in a:
-        print(i)
         exit()
+        print(i)
     # for i in range(1):
     #     puyo()
     # d= ImgDataset(mode="valid")
