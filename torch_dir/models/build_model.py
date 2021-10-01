@@ -7,7 +7,10 @@ import torchvision.models as models
 
 def build_model(config, num_class=1):
     # model = BaseModel()
-    model = BaseModel2()
+    input_channel = 10
+    # input_channel = 12
+    model = BaseModel2(h=config.hidden, input_channel=input_channel)
+
     # model = LinerModel()
 
     return model
@@ -36,19 +39,17 @@ class BaseModel(nn.Module):
 
 
 class BaseModel2(nn.Module):
-    def __init__(self):
+    def __init__(self, h, input_channel):
         super().__init__()
-        h = 32
-        self._conv = Conv(7, h, 3, 1, 1)
-        self._res_block1 = nn.ModuleList([ResidualCSPBlock(h, h) for _ in range(2)])
-        self._res_block1 = ResidualCSPBlock(h, h)
-        # self._res_block1 = nn.Sequential([ResidualCSPBlock(h, h) for _ in range(2)])
+        # h = 32
+        self._conv = Conv(input_channel, h, 3, 1, 1)
+        self._res_block1 = nn.Sequential(*[ResidualCSPBlock(h, h) for _ in range(2)])
         h2 = h * 2
         self._down_conv = Conv(h, h2, 3, 2, 1)
-        self._res_block2 = nn.ModuleList([ResidualCSPBlock(h2, h2) for _ in range(2)])
-        self._res_block2 = ResidualCSPBlock(h2, h2)
-        # self._res_block2 = nn.Sequential([ResidualCSPBlock(h2, h2) for _ in range(2)])
+        self._res_block2 = nn.Sequential(*[ResidualCSPBlock(h2, h2) for _ in range(2)])
         self._fc = nn.Sequential(nn.Linear(h2 * 18, 100), nn.ReLU(), nn.Linear(100, 1))
+        self._sigmoid = nn.Sigmoid()
+        self._max_value = 100
 
     def forward(self, x):
         bs, _, _, _ = x.shape
@@ -58,6 +59,8 @@ class BaseModel2(nn.Module):
         x = self._res_block2(x)
         x = x.view(bs, -1)
         x = self._fc(x)
+        # x = self._sigmoid(x)
+        # x = x * self._max_value
 
         return x
 

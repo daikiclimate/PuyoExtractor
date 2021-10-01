@@ -8,9 +8,9 @@ from .transform import return_transform
 def return_dataset(config):
     # dataset_type = config.type
     num_test = 2000
-    transform = return_transform()
-    return PuyoDataset(num_test=num_test, transform=transform), PuyoDataset(
-        mode="test", num_test=num_test
+    train_transform, test_transform = return_transform()
+    return PuyoDataset(num_test=num_test, transform=train_transform), PuyoDataset(
+        mode="test", num_test=num_test, transform=test_transform
     )
 
 

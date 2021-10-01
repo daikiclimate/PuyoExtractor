@@ -15,10 +15,15 @@ class MseLoss(nn.Module):
     def __init__(self):
         super().__init__()
         self._mse = nn.MSELoss()
-        self._mse = nn.L1Loss()
+        # self._mse = nn.L1Loss()
 
     def forward(self, anchor, outputs, labels):
         bs = outputs.shape[0]
         diff = torch.ones(bs).float().to(outputs.device).reshape(bs, 1)
         loss = self._mse(outputs - labels, diff)
+
+        diff2 = torch.ones(bs).float().to(outputs.device).reshape(bs, 1)
+        loss2 = self._mse(outputs - anchor, diff2)
+
         return loss
+        # return loss + loss2

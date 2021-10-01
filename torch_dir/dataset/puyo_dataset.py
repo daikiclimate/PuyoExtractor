@@ -35,7 +35,6 @@ class PuyoDataset(data.Dataset):
 
         self._mode = mode
         self._transform = transform
-        # self._mode = mode
         if self._mode == "train":
             self._puyo_list = self._puyo_list[:-num_test]
         else:
@@ -44,7 +43,9 @@ class PuyoDataset(data.Dataset):
     def __getitem__(self, idx):
         path = os.path.join(self._data_dir, self._puyo_list[idx])
         if self._mode == "test":
-            pre_field, cur_field, exsample_field = get_all_puyo(path)
+            pre_field, cur_field, exsample_field = get_all_puyo(
+                path, transform=self._transform
+            )
         else:
             pre_field, cur_field, exsample_field = puyo(path, self._transform)
         return pre_field, cur_field, exsample_field
@@ -68,6 +69,10 @@ def puyo(file_name="S103_10_p1_1.pkl", transform=None):
         if max_time == 10:
             break
 
+    pre_field = pre_field.reshape(1, 12, 6)
+    cur_field = cur_field.reshape(1, 12, 6)
+    exsample_field = exsample_field.reshape(1, 12, 6)
+
     pre_field, cur_field, exsample_field = transform(
         [pre_field, cur_field, exsample_field]
     )
@@ -79,14 +84,16 @@ def puyo(file_name="S103_10_p1_1.pkl", transform=None):
 
 
 def to_onehot(t):
-    t = torch.tensor(t).long().reshape(-1)
-    t = torch.eye(7)[t]
-    t = t.reshape(12, 6, 7)
-    t = t.permute(2, 0, 1)
-    return t
+    t = torch.tensor(t)
+    puyo = t[0:1]
+    puyo = puyo.long().reshape(-1)
+    puyo = torch.eye(7)[puyo]
+    puyo = puyo.reshape(12, 6, 7)
+    puyo = puyo.permute(2, 0, 1)
+    return torch.cat([puyo, t[1:]], 0)
 
 
-def get_all_puyo(file_name):
+def get_all_puyo(file_name, transform=None):
     with open(file_name, "rb") as f:
         t = pickle.load(f)
     pre_field, cur_field, next_puyo = t
@@ -95,9 +102,13 @@ def get_all_puyo(file_name):
     for i in range(11):
         for j in range(2):
             f = put_next_puyo(pre_field, next_puyo[0], i, j)
-            f = to_onehot(f).float()
-            f = f.unsqueeze(0)
+            f = f.reshape(1, 12, 6)
             all_field.append(f)
+    if transform:
+        all_field = transform(all_field)
+
+    all_field = [to_onehot(f).float().unsqueeze(0) for f in all_field]
+    # all_field = [to_onehot(f).float().unsqueeze(0) for f in all_fields]
     all_field = torch.cat(all_field)
     return pre_field, cur_field, all_field
 
@@ -203,6 +214,31 @@ def check_gt_index(d1, d2):
         if torch.all(d.reshape(-1) == d1):
             return i
     return -1
+
+
+def get_all_puyo_demo(pre_field, next_puyo, transform=None):
+
+    all_field = []
+    for i in range(11):
+        for j in range(2):
+            f = put_next_puyo(pre_field, next_puyo, i, j)
+            f = f.reshape(1, 12, 6)
+            all_field.append(f)
+    if transform:
+        all_field = transform(all_field)
+    all_field = [to_onehot(f).float().unsqueeze(0) for f in all_field]
+    all_field = torch.cat(all_field)
+    return all_field
+
+
+class PuyoGenerator(object):
+    def __init__(self):
+        self._use_puyo = np.random.permutation([0, 1, 2, 3, 4])[:4]
+
+    def get_next_puyo(self):
+        p1 = np.random.randint(0, 4)
+        p2 = np.random.randint(0, 4)
+        return self._use_puyo[[p1, p2]]
 
 
 if __name__ == "__main__":

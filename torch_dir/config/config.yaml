@@ -1,5 +1,8 @@
-device: "cuda:2"
+device: "cuda:0"
+
 model: "base" 
+hidden: 512
+
 save_folder : "./weight/"
 lr : 0.001
 epochs : 20
